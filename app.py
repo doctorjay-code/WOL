@@ -25,7 +25,7 @@ ALLOWED_SLACK_USER_ID = os.environ.get("ALLOWED_SLACK_USER_ID")
 IPTIME_URL = os.environ.get("IPTIME_URL")
 IPTIME_USER = os.environ.get("IPTIME_USER")
 IPTIME_PASS = os.environ.get("IPTIME_PASS")
-TARGET_MAC = os.environ.get("TARGET_MAC")
+TARGET_MAC = os.environ.get("TARGET_MAC", "0C-9D-92-62-81-1D")
 
 if not SLACK_BOT_TOKEN or not SLACK_APP_TOKEN:
     logger.error("필수 슬랙 토큰(SLACK_BOT_TOKEN, SLACK_APP_TOKEN)이 설정되지 않았습니다.")
@@ -73,19 +73,26 @@ def handle_turn_on_pc(message, say):
     # 슬랙 타임아웃(3초) 재시도 및 중복 메시지 전송 방지를 위해 먼저 즉시 1회 답변 전송
     say(f"🤖 <@{user_id}>님의 요청을 확인했습니다. ipTime 공유기를 통해 컴퓨터 부팅(WOL) 명령을 전송합니다...")
 
-    # 백그라운드 쓰레드에서 WOL 발송 처리 (슬랙 중복 재전송 완벽 방지)
+    # 백그라운드 쓰레드에서 WOL 발송 처리 (진짜 랜카드 MAC 0C-9D-92-62-81-1D 및 설정된 MAC 동시 발송)
     def async_wol():
-        success, result_msg = send_iptime_wol(
-            iptime_url=IPTIME_URL,
-            username=IPTIME_USER,
-            password=IPTIME_PASS,
-            target_mac=TARGET_MAC
-        )
+        target_macs = list(set([TARGET_MAC, "0C-9D-92-62-81-1D", "70-5D-CC-99-BF-7A"]))
+        success_macs = []
 
-        if success:
-            say(f"✅ **부팅 명령 성공!**\n{result_msg}\n잠시 후 윈도우가 부팅됩니다. 💻")
+        for mac in target_macs:
+            if mac:
+                success, _ = send_iptime_wol(
+                    iptime_url=IPTIME_URL,
+                    username=IPTIME_USER,
+                    password=IPTIME_PASS,
+                    target_mac=mac
+                )
+                if success:
+                    success_macs.append(mac)
+
+        if success_macs:
+            say(f"✅ **부팅 명령 성공!**\nipTime 공유기를 통해 타겟 컴퓨터(MAC: `{', '.join(success_macs)}`)에 WOL 켜기 명령을 보냈습니다!\n잠시 후 윈도우가 부팅됩니다. 💻")
         else:
-            say(f"❌ **부팅 명령 실패**\n원인: {result_msg}\nipTime 설정(DDNS 주소, 원격포트, 비밀번호)을 확인해 주세요.")
+            say(f"❌ **부팅 명령 실패**\nipTime 설정(DDNS 주소, 원격포트, 비밀번호)을 확인해 주세요.")
 
     threading.Thread(target=async_wol, daemon=True).start()
 
