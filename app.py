@@ -57,6 +57,7 @@ def is_authorized(user_id: str) -> bool:
 
 @app.message(re.compile(r"(컴터|컴퓨터|pc|PC|피씨|컴).*(켜|부팅)"))
 def handle_turn_on_pc(message, say):
+    # 봇 메시지 및 서브타입 메시지 무시 (중복 실행 방지)
     if message.get("bot_id") or message.get("subtype") in ["bot_message", "message_changed", "channel_join"]:
         return
 
@@ -69,19 +70,24 @@ def handle_turn_on_pc(message, say):
         say(f"⚠️ <@{user_id}>님은 컴퓨터 전원 명령 권한이 없습니다.")
         return
 
+    # 슬랙 타임아웃(3초) 재시도 및 중복 메시지 전송 방지를 위해 먼저 즉시 1회 답변 전송
     say(f"🤖 <@{user_id}>님의 요청을 확인했습니다. ipTime 공유기를 통해 컴퓨터 부팅(WOL) 명령을 전송합니다...")
 
-    success, result_msg = send_iptime_wol(
-        iptime_url=IPTIME_URL,
-        username=IPTIME_USER,
-        password=IPTIME_PASS,
-        target_mac=TARGET_MAC
-    )
+    # 백그라운드 쓰레드에서 WOL 발송 처리 (슬랙 중복 재전송 완벽 방지)
+    def async_wol():
+        success, result_msg = send_iptime_wol(
+            iptime_url=IPTIME_URL,
+            username=IPTIME_USER,
+            password=IPTIME_PASS,
+            target_mac=TARGET_MAC
+        )
 
-    if success:
-        say(f"✅ **부팅 명령 성공!**\n{result_msg}\n잠시 후 윈도우가 부팅됩니다. 💻")
-    else:
-        say(f"❌ **부팅 명령 실패**\n원인: {result_msg}\nipTime 설정(DDNS 주소, 원격포트, 비밀번호)을 확인해 주세요.")
+        if success:
+            say(f"✅ **부팅 명령 성공!**\n{result_msg}\n잠시 후 윈도우가 부팅됩니다. 💻")
+        else:
+            say(f"❌ **부팅 명령 실패**\n원인: {result_msg}\nipTime 설정(DDNS 주소, 원격포트, 비밀번호)을 확인해 주세요.")
+
+    threading.Thread(target=async_wol, daemon=True).start()
 
 if __name__ == "__main__":
     threading.Thread(target=start_health_check_server, daemon=True).start()

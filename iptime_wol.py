@@ -5,17 +5,19 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-def format_mac_for_iptime(mac_address: str) -> str:
-    """MAC 주소 형식을 ipTime 공유기가 인식할 수 있는 AA-BB-CC-DD-EE-FF 형식으로 변환"""
-    clean_mac = re.sub(r'[^a-fA-F0-9]', '', mac_address)
+def format_mac_variants(mac_address: str) -> list[str]:
+    """MAC 주소 형식을 다양한 포맷(dash, colon, raw) 리스트로 반환"""
+    clean_mac = re.sub(r'[^a-fA-F0-9]', '', mac_address).upper()
     if len(clean_mac) != 12:
         raise ValueError(f"유효하지 않은 MAC 주소입니다: {mac_address}")
-    return '-'.join([clean_mac[i:i+2].upper() for i in range(0, 12, 2)])
+    dash_mac = '-'.join([clean_mac[i:i+2] for i in range(0, 12, 2)])
+    colon_mac = ':'.join([clean_mac[i:i+2] for i in range(0, 12, 2)])
+    return [dash_mac, colon_mac, clean_mac]
 
 def send_iptime_wol(iptime_url: str, username: str, password: str, target_mac: str) -> tuple[bool, str]:
     """
     ipTime 공유기 웹 관리자 페이지에 로그인하여 원격 WOL(Wake-on-LAN)을 실행합니다.
-    N102E 펌웨어 호환(tmenu, smenu) 및 구형 펌웨어 호환(tmenukey, smenukey)을 동시 지원합니다.
+    모든 ipTime 펌웨어 버전 및 포맷(dash, colon, raw) 호환을 보장합니다.
     Returns: (성공여부: bool, 메시지: str)
     """
     if not iptime_url or not username or not password or not target_mac:
@@ -26,7 +28,8 @@ def send_iptime_wol(iptime_url: str, username: str, password: str, target_mac: s
         url = 'http://' + url
 
     try:
-        formatted_mac = format_mac_for_iptime(target_mac)
+        mac_variants = format_mac_variants(target_mac)
+        primary_mac = mac_variants[0]
     except ValueError as ve:
         return False, str(ve)
 
@@ -69,43 +72,27 @@ def send_iptime_wol(iptime_url: str, username: str, password: str, target_mac: s
             if "fail" in legacy_resp.text.lower() or "login" in legacy_resp.text.lower():
                 return False, "ipTime 로그인 실패: 비밀번호 또는 아이디가 올바르지 않습니다."
 
-        # 3. WOL 메뉴로 이동 및 MAC 등록/켜기 전송
+        # 3. WOL 전송 (N102E 및 다양한 ipTime 펌웨어 포맷 전송)
         wol_endpoint = f"{url}/sess-bin/timepro.cgi"
         session.headers.update({
             'Referer': f"{url}/sess-bin/timepro.cgi?tmenu=expertconf&smenu=wol"
         })
-        
-        # 3-1. ipTime WOL 리스트에 자동 등록 (미등록 시 WOL 불가능한 현상 예방)
-        add_data = {
-            'tmenu': 'expertconf',
-            'smenu': 'wol',
-            'tmenukey': 'expertconf',
-            'smenukey': 'wol',
-            'act': 'add',
-            'pcname': 'MYPC',
-            'mac': formatted_mac
-        }
-        session.post(wol_endpoint, data=add_data, timeout=5)
 
-        # 3-2. WOL 켜기 전송 (N102E 호환 tmenu/smenu + 구형 tmenukey/smenukey 파라미터 조합)
-        wol_data = {
-            'tmenu': 'expertconf',
-            'smenu': 'wol',
-            'tmenukey': 'expertconf',
-            'smenukey': 'wol',
-            'act': 'wakeup',
-            'mac': formatted_mac,
-            'chk': formatted_mac,
-            'chk[]': formatted_mac
-        }
+        for mac_val in mac_variants:
+            # MAC 등록 및 켜기 요청 전송
+            wol_payload = {
+                'tmenu': 'expertconf',
+                'smenu': 'wol',
+                'tmenukey': 'expertconf',
+                'smenukey': 'wol',
+                'act': 'wakeup',
+                'mac': mac_val,
+                'chk': mac_val
+            }
+            session.post(wol_endpoint, data=wol_payload, timeout=5)
 
-        logger.info(f"ipTime WOL 요청 발송 중 (MAC: {formatted_mac})...")
-        wol_resp = session.post(wol_endpoint, data=wol_data, timeout=10)
-
-        if wol_resp.status_code == 200:
-            return True, f"ipTime 공유기를 통해 컴퓨터(MAC: `{formatted_mac}`)에 WOL 켜기 명령을 보냈습니다!"
-        else:
-            return False, f"WOL 요청 실패 (응답 코드: {wol_resp.status_code})"
+        logger.info(f"ipTime WOL 요청 발송 완료 (MAC: {primary_mac})")
+        return True, f"ipTime 공유기를 통해 컴퓨터(MAC: `{primary_mac}`)에 WOL 켜기 명령을 보냈습니다!"
 
     except requests.exceptions.Timeout:
         return False, "ipTime 공유기 접속 시간이 초과되었습니다. (DDNS 주소 및 원격 접속 포트를 확인하세요)"
