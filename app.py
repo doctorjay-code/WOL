@@ -1,6 +1,8 @@
 import os
 import re
 import logging
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -29,6 +31,23 @@ if not SLACK_BOT_TOKEN or not SLACK_APP_TOKEN:
     logger.error("필수 슬랙 토큰(SLACK_BOT_TOKEN, SLACK_APP_TOKEN)이 설정되지 않았습니다.")
 
 app = App(token=SLACK_BOT_TOKEN)
+
+# Render Web Service 포트 바인딩용 미니 HTTP 서버 (Render 포트 스캔 즉시 통과용)
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain; charset=utf-8')
+        self.end_headers()
+        self.wfile.write("ipTime WOL Slack Bot is Running Live!".encode('utf-8'))
+
+    def log_message(self, format, *args):
+        pass # 로그 스팸 방지
+
+def start_health_check_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    logger.info(f"🌐 Render 포트 감지용 웹서버 시작 (Port: {port})")
+    server.serve_forever()
 
 def is_authorized(user_id: str) -> bool:
     """보안검사: 특정 사용자만 컴퓨터를 켤 수 있도록 제한 (설정된 경우)"""
@@ -76,6 +95,9 @@ def handle_help(message, say):
     say(help_text)
 
 if __name__ == "__main__":
+    # Render 포트 바인딩용 헬스체크 서버를 데몬 쓰레드로 실행
+    threading.Thread(target=start_health_check_server, daemon=True).start()
+    
     logger.info("⚡ Slack Bot (Socket Mode) 시작 중...")
     handler = SocketModeHandler(app, SLACK_APP_TOKEN)
     handler.start()
