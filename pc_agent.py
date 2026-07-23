@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import time
 import logging
 from dotenv import load_dotenv
 from slack_bolt import App
@@ -11,6 +12,9 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger("WOL-LocalAgent")
+
+# 에이전트 시작 시각 기록 (부팅 전 쌓여있던 옛날 슬랙 메시지 실행 방지용)
+BOT_START_TIME = time.time()
 
 load_dotenv()
 
@@ -32,8 +36,14 @@ app = App(token=SLACK_BOT_TOKEN)
 
 @app.message(re.compile(r"(박주하|박범준|닥터빌|파일|실행|열어줘|꺼줘|종료|목록|도움말)"))
 def handle_pc_commands(message, say):
-    # 봇이 보낸 알림 메시지는 무시
+    # 1. 봇 메시지 무시
     if message.get("bot_id") or message.get("subtype") in ["bot_message", "message_changed", "channel_join"]:
+        return
+
+    # 2. 부팅 전에 슬랙에 올라왔던 옛날 큐 메시지 무시
+    msg_ts = float(message.get("ts", 0))
+    if msg_ts < (BOT_START_TIME - 5.0):
+        logger.info(f"부팅 전 쌓여있던 이전 메시지 무시됨 (ts: {msg_ts})")
         return
 
     text = message.get("text", "")
@@ -42,13 +52,14 @@ def handle_pc_commands(message, say):
 
     logger.info(f"로컬 에이전트 사용자 명령 수신: '{text}' (유저: {user_id})")
 
-    # 1. 윈도우 원격 종료 처리
+    # 3. 윈도우 원격 절전 모드 처리 (옵션 A: WOL 100% 보장 및 2초 부팅)
     if "꺼줘" in text or "종료" in text:
-        say("🖥️ **윈도우 종료 명령을 수신했습니다.** 10초 후 컴퓨터가 안전하게 종료됩니다.")
-        os.system("shutdown /s /t 10")
+        say("🌙 **윈도우 절전 모드(Sleep)를 실행합니다.** 3초 후 컴퓨터가 절전 상태로 들어갑니다. (나중에 슬랙 '컴터 켜줘' 입력 시 2초 만에 즉시 부팅됩니다!)")
+        time.sleep(3)
+        os.system('powershell -command "Add-Type -Assembly System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState(\'Suspend\', $false, $false)"')
         return
 
-    # 2. 등록된 파일/그룹 실행 처리
+    # 4. 등록된 파일/그룹 실행 처리
     for name, paths in commands.items():
         if name in text:
             if isinstance(paths, str):
@@ -73,7 +84,7 @@ def handle_pc_commands(message, say):
                     say(f"⚠️ 파일 경로를 찾을 수 없습니다: `{path}`")
             return
 
-    # 3. 명시적으로 "목록" 또는 "도움말"이라고 칠 때만 목록 안내
+    # 5. 명시적 도움말
     if "목록" in text or "도움말" in text:
         file_list = [f"• `{key}` ➔ `{val}`" for key, val in commands.items()]
         say("📋 **등록된 명령어 목록:**\n" + "\n".join(file_list))
