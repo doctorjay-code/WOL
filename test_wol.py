@@ -22,28 +22,15 @@ if match:
     session_id = match.group(1)
     s.cookies.set('efm_session_id', session_id)
     
-    # 1. Add MAC to WOL table
-    add_data = {
-        'tmenu': 'expertconf',
-        'smenu': 'wol',
-        'tmenukey': 'expertconf',
-        'smenukey': 'wol',
-        'act': 'add',
-        'pcname': 'MYPC',
-        'mac': '70-5D-CC-99-BF-7A'
-    }
-    r_add = s.post('http://hyo02040.iptime.org:14817/sess-bin/timepro.cgi', data=add_data)
-    print("Add status:", r_add.status_code)
-
-    # 2. Wakeup WOL
-    wol_data = {
-        'tmenu': 'expertconf',
-        'smenu': 'wol',
-        'tmenukey': 'expertconf',
-        'smenukey': 'wol',
-        'act': 'wakeup',
-        'mac': '70-5D-CC-99-BF-7A',
-        'chk': '70-5D-CC-99-BF-7A'
-    }
-    r_wol = s.post('http://hyo02040.iptime.org:14817/sess-bin/timepro.cgi', data=wol_data)
-    print("Wakeup status:", r_wol.status_code, len(r_wol.text))
+    # Try fetching wol iframe directly
+    urls = [
+        'http://hyo02040.iptime.org:14817/sess-bin/timepro.cgi?tmenu=expertconf&smenu=wol&act=main',
+        'http://hyo02040.iptime.org:14817/sess-bin/timepro.cgi?tmenu=expertconf&smenu=wol&act=body',
+        'http://hyo02040.iptime.org:14817/sess-bin/timepro.cgi?tmenu=expertconf&smenu=wol&act=frame'
+    ]
+    for u in urls:
+        res = s.get(u)
+        print(u, res.status_code, len(res.text))
+        for line in res.text.splitlines():
+            if 'form' in line.lower() or 'mac' in line.lower() or 'wakeup' in line.lower():
+                print("  ->", line[:150])
