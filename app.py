@@ -41,7 +41,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.wfile.write("ipTime WOL Slack Bot is Running Live!".encode('utf-8'))
 
     def log_message(self, format, *args):
-        pass # 로그 스팸 방지
+        pass
 
 def start_health_check_server():
     port = int(os.environ.get("PORT", 10000))
@@ -57,6 +57,9 @@ def is_authorized(user_id: str) -> bool:
 
 @app.message(re.compile(r"(컴터|컴퓨터|pc|PC|피씨|컴).*(켜|부팅)"))
 def handle_turn_on_pc(message, say):
+    if message.get("bot_id") or message.get("subtype") in ["bot_message", "message_changed", "channel_join"]:
+        return
+
     user_id = message.get("user")
     user_text = message.get("text", "")
 
@@ -80,22 +83,7 @@ def handle_turn_on_pc(message, say):
     else:
         say(f"❌ **부팅 명령 실패**\n원인: {result_msg}\nipTime 설정(DDNS 주소, 원격포트, 비밀번호)을 확인해 주세요.")
 
-@app.message(re.compile(r"(도움말|help|상태)"))
-def handle_help(message, say):
-    user_id = message.get("user")
-    help_text = (
-        f"👋 안녕하세요! ipTime WOL 컴퓨터 켜기 봇입니다.\n\n"
-        f"**사용 가능한 자연어 명령 예시:**\n"
-        f"• `컴터 켜줘` / `컴퓨터 켜줄래?` / `PC 켜라` / `피씨 부팅해줘` / `컴 켜`\n\n"
-        f"⚙️ **현재 설정 정보:**\n"
-        f"• ipTime 접속 주소: `{IPTIME_URL or '미설정'}`\n"
-        f"• 타겟 MAC 주소: `{TARGET_MAC or '미설정'}`\n"
-        f"• 명령어 허용 유저: `{ALLOWED_SLACK_USER_ID or '모든 사용자 허용'}`"
-    )
-    say(help_text)
-
 if __name__ == "__main__":
-    # Render 포트 바인딩용 헬스체크 서버를 데몬 쓰레드로 실행
     threading.Thread(target=start_health_check_server, daemon=True).start()
     
     logger.info("⚡ Slack Bot (Socket Mode) 시작 중...")
