@@ -3,6 +3,7 @@ import re
 import json
 import time
 import logging
+import threading
 from dotenv import load_dotenv
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -52,11 +53,15 @@ def handle_pc_commands(message, say):
 
     logger.info(f"로컬 에이전트 사용자 명령 수신: '{text}' (유저: {user_id})")
 
-    # 3. 윈도우 원격 절전 모드 처리 (옵션 A: WOL 100% 보장 및 2초 부팅)
+    # 3. 윈도우 원격 절전 모드 처리 (슬랙 중복 메시지 방지를 위해 즉시 응답 후 백그라운드 지연 실행)
     if "꺼줘" in text or "종료" in text:
         say("🌙 **윈도우 절전 모드(Sleep)를 실행합니다.** 3초 후 컴퓨터가 절전 상태로 들어갑니다. (나중에 슬랙 '컴터 켜줘' 입력 시 2초 만에 즉시 부팅됩니다!)")
-        time.sleep(3)
-        os.system('powershell -command "Add-Type -Assembly System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState(\'Suspend\', $false, $false)"')
+        
+        def async_sleep_mode():
+            time.sleep(3)
+            os.system('powershell -command "Add-Type -Assembly System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState(\'Suspend\', $false, $false)"')
+            
+        threading.Thread(target=async_sleep_mode, daemon=True).start()
         return
 
     # 4. 등록된 파일/그룹 실행 처리
