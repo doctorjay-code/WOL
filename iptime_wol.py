@@ -36,11 +36,15 @@ def send_iptime_wol(iptime_url: str, username: str, password: str, target_mac: s
     session = requests.Session()
     session.headers.update({
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': f"{url}/sess-bin/login_session.cgi"
     })
 
     try:
-        # 1. ipTime 로그인 핸들러 요청
+        # [1/4] 메인 페이지 접속 (세션 쿠키 초기화)
+        logger.info(f"[WOL 1/4] ipTime 메인 페이지 접속 중... ({url}/)")
+        r0 = session.get(f"{url}/", timeout=10, allow_redirects=True)
+        logger.info(f"[WOL 1/4] 응답: {r0.status_code}")
+
+        # [2/4] 로그인 핸들러 POST
         login_endpoint = f"{url}/sess-bin/login_handler.cgi"
         login_data = {
             'init_status': '1',
@@ -49,18 +53,32 @@ def send_iptime_wol(iptime_url: str, username: str, password: str, target_mac: s
             'username': username,
             'passwd': password
         }
+        session.headers.update({
+            'Referer': f"{url}/sess-bin/login_session.cgi",
+            'Origin': url
+        })
 
-        logger.info(f"ipTime 공유기({url}) 로그인 시도 중...")
-        login_resp = session.post(login_endpoint, data=login_data, timeout=10)
+        logger.info(f"[WOL 2/4] 로그인 POST 시도 중... ({login_endpoint})")
+        login_resp = session.post(login_endpoint, data=login_data, timeout=10, allow_redirects=False)
+        logger.info(f"[WOL 2/4] 로그인 응답 코드: {login_resp.status_code}")
 
-        # 2. JavaScript의 setCookie('session_id') 추출
+        # setCookie('session_id') 추출
         match = re.search(r"setCookie\('([^']+)'\)", login_resp.text)
         if match:
             session_id = match.group(1)
             session.cookies.set('efm_session_id', session_id)
-            logger.info(f"ipTime 세션 ID 획득 성공: {session_id}")
+            logger.info(f"[WOL 2/4] 세션 ID 획득: {session_id}")
+
+            # [3/4] JS의 document.form.submit() 재현 (login.cgi GET)
+            #       이 단계 없이는 서버가 세션을 활성화하지 않아 WOL 명령이 무시됨
+            session.headers.update({'Referer': login_endpoint})
+            logger.info(f"[WOL 3/4] 세션 활성화 중... ({url}/sess-bin/login.cgi GET)")
+            r3 = session.get(f"{url}/sess-bin/login.cgi", timeout=10, allow_redirects=True)
+            logger.info(f"[WOL 3/4] 세션 활성화 완료: {r3.status_code}")
         else:
-            # 구형 펌웨어 호환 로그인 (cgi-bin/timepro.cgi)
+            # 구형 펌웨어 호환 로그인
+            logger.warning(f"[WOL 2/4] setCookie 없음 - 구형 펌웨어 로그인 시도")
+            logger.warning(f"[WOL 2/4] 로그인 응답 일부: {login_resp.text[:200]}")
             legacy_endpoint = f"{url}/cgi-bin/timepro.cgi"
             legacy_data = {
                 'tmenukey': 'http',
@@ -72,14 +90,14 @@ def send_iptime_wol(iptime_url: str, username: str, password: str, target_mac: s
             if "fail" in legacy_resp.text.lower() or "login" in legacy_resp.text.lower():
                 return False, "ipTime 로그인 실패: 비밀번호 또는 아이디가 올바르지 않습니다."
 
-        # 3. WOL 전송 (N102E 및 다양한 ipTime 펌웨어 포맷 전송)
+        # [4/4] WOL 패킷 전송 (dash/colon/raw 3가지 포맷 모두 시도)
         wol_endpoint = f"{url}/sess-bin/timepro.cgi"
         session.headers.update({
             'Referer': f"{url}/sess-bin/timepro.cgi?tmenu=expertconf&smenu=wol"
         })
 
+        logger.info(f"[WOL 4/4] WOL 패킷 전송 시작 (MAC: {primary_mac}, 3가지 포맷 시도)")
         for mac_val in mac_variants:
-            # MAC 등록 및 켜기 요청 전송
             wol_payload = {
                 'tmenu': 'expertconf',
                 'smenu': 'wol',
@@ -89,16 +107,20 @@ def send_iptime_wol(iptime_url: str, username: str, password: str, target_mac: s
                 'mac': mac_val,
                 'chk': mac_val
             }
-            session.post(wol_endpoint, data=wol_payload, timeout=5)
+            wr = session.post(wol_endpoint, data=wol_payload, timeout=5)
+            logger.info(f"[WOL 4/4] POST (mac={mac_val}): status={wr.status_code}")
 
-        logger.info(f"ipTime WOL 요청 발송 완료 (MAC: {primary_mac})")
+        logger.info(f"[WOL 4/4] WOL 전송 완료")
         return True, f"ipTime 공유기를 통해 컴퓨터(MAC: `{primary_mac}`)에 WOL 켜기 명령을 보냈습니다!"
 
-    except requests.exceptions.Timeout:
+    except requests.exceptions.Timeout as e:
+        logger.error(f"[WOL] 타임아웃: {e}")
         return False, "ipTime 공유기 접속 시간이 초과되었습니다. (DDNS 주소 및 원격 접속 포트를 확인하세요)"
     except requests.exceptions.RequestException as e:
+        logger.error(f"[WOL] 통신 에러: {e}")
         return False, f"ipTime 공유기 통신 에러: {str(e)}"
     except Exception as e:
+        logger.error(f"[WOL] 예외 발생: {e}", exc_info=True)
         return False, f"WOL 실행 중 오류 발생: {str(e)}"
 
 
