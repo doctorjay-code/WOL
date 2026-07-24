@@ -1,86 +1,60 @@
-# 📱 Slack Bot ipTime WOL & Remote PC Control System
+# Slack PC Agent (DVA 닥터빌 원격 제어)
 
-슬랙(Slack)을 통해 **원격 컴퓨터 전원 켜기(WOL)** 및 부팅 후 **특정 파일/프로그램 실행**, **원격 컴퓨터 종료**를 제어하는 통합 AI 서비스 프로젝트입니다.
-
-AI 코딩 어시스턴트(Antigravity 등)가 이 프로젝트를 한눈에 파악하고 확장할 수 있도록 전체 구조가 정의되어 있습니다.
+슬랙(Slack) 메신저를 통해 **닥터빌(DVA) 자동화 프로그램 실행/종료** 및 **윈도우 PC 원격 절전 모드**를 제어하는 로컬 PC 에이전트입니다.
 
 ---
 
-## 🏗️ 프로젝트 전체 구조 (Project Structure)
+## 📋 슬랙 명령어 전체 요약
 
-```text
-WOL/
-├── app.py              # [클라우드 24/7 봇] Render.com 등 클라우드에서 실행되며 WOL 전원 켜기 담당
-├── iptime_wol.py       # ipTime 공유기 웹 관리자 세션 로그인 및 WOL HTTP POST 발송 모듈
-├── pc_agent.py         # [로컬 PC 에이전트] 윈도우 부팅 시 자동 실행되며 파일 실행 및 원격 종료 담당
-├── commands.json       # 슬랙 명령어 ➔ 윈도우 실행 파일 경로 매핑 설정 파일 (새 파일 추가 시 여기 수정)
-├── run_agent.bat       # 윈도우 시작프로그램(shell:startup) 등록용 실행 스크립트
-├── requirements.txt    # 파이썬 라이브러리 의존성
-├── Procfile            # Render.com 무료 웹 서비스 배포 설정
-├── .gitignore          # 환경변수(.env) 유출 방지
-└── .env                # 슬랙 토큰 및 ipTime 접속 정보 (GitHub 업로드금지)
-```
+### 1. 닥터빌(DVA) 프로그램 실행 🚀
+슬랙 채널에 아래 명령어 중 하나를 입력하면 닥터빌 프로그램이 실행됩니다.
+- `ㄱㄱ`
+- `닥터빌`
+- `디바` / `DVA`
+- `박주하`
+- `박범준`
 
----
+### 2. 닥터빌(DVA) 프로그램만 종료 🛑 *(PC 전원은 유지)*
+슬랙 채널에 아래 명령어 중 하나를 입력하면 컴퓨터는 켜둔 채 **닥터빌 프로그램만 개별 종료**됩니다.
+- `꺼`
+- `꺼줘`
+- `종료`
+- `닥터빌 꺼줘` / `디바 꺼줘`
 
-## ⚙️ 2개의 핵심 봇 서비스 역할 분담
+### 3. 컴퓨터 전체 절전 모드 🌙
+명시적으로 `컴터` / `컴퓨터` 단어가 포함되면 **윈도우 PC 전체가 절전 모드로 진입**합니다.
+- `컴터 꺼줘`
+- `컴터 꺼`
+- `컴퓨터 꺼줘`
 
-### 1. Cloud WOL Bot (`app.py`)
-* **실행 환경**: Render.com (24시간 완전 무료 호스팅)
-* **주요 역할**: 컴퓨터가 꺼져 있을 때 슬랙 메시지(`"컴터 켜줘"`)를 수신하고, ipTime 공유기 DDNS로 WOL 패킷을 보냅니다.
-* **보안 기능**: `ALLOWED_SLACK_USER_ID` 설정으로 본인만 전원을 켤 수 있도록 제한 가능.
-
-### 2. Local Windows Agent (`pc_agent.py`)
-* **실행 환경**: 내 컴퓨터(Windows) 시작프로그램(`shell:startup`) 등록
-* **주요 역할**: 부팅 완료 후 백그라운드에서 동작하며 특정 파일 실행 및 원격 종료 처리.
-* **명령어 예시**:
-  * `"닥터빌 켜줘"` ➔ `박주하_닥터빌.bat` + `박범준_닥터빌.bat` 둘 다 동시에 실행 🚀
-  * `"박주하 켜줘"` ➔ `박주하_닥터빌.bat` 개별 실행
-  * `"박범준 켜줘"` ➔ `박범준_닥터빌.bat` 개별 실행
-  * `"컴터 꺼줘"` / `"컴퓨터 종료"` ➔ 윈도우 원격 종료 (`shutdown /s /t 10`)
+### 4. 명령어 안내 📋
+- `도움말` / `목록`
 
 ---
 
-## ➕ 새로운 파일/프로그램 추가하는 방법 (`commands.json`)
+## 🔔 슬랙 자동 알림
 
-새로운 파일이나 프로그램을 슬랙으로 키고 싶을 때는 `commands.json` 파일만 수정하시면 됩니다:
-
-```json
-{
-  "박주하": [
-    "C:\\Users\\hyo02\\Downloads\\GitHub\\DVA\\박주하_닥터빌.bat"
-  ],
-  "박범준": [
-    "C:\\Users\\hyo02\\Downloads\\GitHub\\DVA\\박범준_닥터빌.bat"
-  ],
-  "닥터빌": [
-    "C:\\Users\\hyo02\\Downloads\\GitHub\\DVA\\박주하_닥터빌.bat",
-    "C:\\Users\\hyo02\\Downloads\\GitHub\\DVA\\박범준_닥터빌.bat"
-  ],
-  "카카오톡": [
-    "C:\\Program Files\\Kakao\\KakaoTalk.exe"
-  ]
-}
-```
+- **에이전트 시작 시**: `🟢 로컬 에이전트가 가동되었습니다.`
+- **에이전트 종료 시**: `🔴 로컬 에이전트가 종료되었습니다.`
 
 ---
 
-## 🔐 환경 변수 목록 (.env)
+## 🛡️ 중복 실행 방지 (싱글 인스턴스)
 
-```env
-SLACK_BOT_TOKEN=xoxb-...
-SLACK_APP_TOKEN=xapp-...
-IPTIME_URL=http://hyo02040.iptime.org:14817
-IPTIME_USER=hyo02040
-IPTIME_PASS=jFLUK8GDtEr8ixY
-TARGET_MAC=70-5D-CC-99-BF-7A
-ALLOWED_SLACK_USER_ID=
-```
+- 새 에이전트가 실행되면 **기존에 구동 중이던 이전 에이전트 프로세스를 자동으로 닫아** 언제나 단 1개의 에이전트만 항상 실행되도록 보장합니다.
 
 ---
 
-## 🤖 Antigravity 바이브 코딩 가이드
+## 🖥️ 실행 및 자동 시작 안내
 
-Antigravity로 기능 추가 또는 수정 시 참고사항:
-1. **WOL 관련 기능 수정**: `iptime_wol.py` 또는 `app.py` 수정 후 GitHub에 `git push` 하면 Render에 자동 반영됨.
-2. **윈도우 제어 기능 수정**: `pc_agent.py` 또는 `commands.json` 수정 후 저장하면 로컬 에이전트가 반영함.
+- **부팅 시 자동 실행**: 윈도우 시작프로그램(`shell:startup`)에 등록되어 있어 컴퓨터 전원을 켜면 **자동으로 화면에 `[Slack PC Agent]` 콘솔 창이 실행**됩니다.
+- **수동 실행**: 바탕화면의 `[Slack PC Agent 실행]` 바로가기 아이콘을 더블클릭합니다.
+
+---
+
+## 📁 주요 구성 파일
+
+- `pc_agent.py`: 메인 슬랙 로컬 에이전트 소스코드 (DVA 소켓 엔진 & 싱글 인스턴스 방어)
+- `commands.json`: 슬랙 명령어 매핑 파일 (실행할 배치 파일 경로 설정)
+- `run_agent.bat`: 화면 콘솔 실행 배치 파일
+- `.env`: Slack API 토큰 설정 파일
