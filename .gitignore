@@ -5,6 +5,3 @@ __pycache__/
 env/
 venv/
 .DS_Store
-.last_channel
-debug_wol.py
-wol_response.html
